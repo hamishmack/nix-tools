@@ -26,7 +26,7 @@ import Distribution.Compiler
 import Distribution.Types.PackageName (PackageName)
 import Distribution.Simple.BuildToolDepends (getAllToolDependencies)
 
-import Data.String (fromString)
+import Data.String (fromString, IsString)
 
 -- import Distribution.Types.GenericPackageDescription
 -- import Distribution.Types.PackageDescription
@@ -44,7 +44,7 @@ data Src
   | Git String String (Maybe String) (Maybe String)
   deriving Show
 
-pkgs, hsPkgs, flags :: Text
+pkgs, hsPkgs, pkgconfPkgs, flags :: Text
 pkgs   = "pkgs"
 hsPkgs = "hsPkgs"
 pkgconfPkgs = "pkgconfPkgs"
@@ -191,7 +191,8 @@ instance ToNixExpr GenericPackageDescription where
   toNix gpd = mkNonRecSet $ [ "flags"      $= (mkNonRecSet . fmap toNixBinding $ genPackageFlags gpd)
                             , "package"    $= (toNix (packageDescription gpd))
                             , "components" $= components ]
-    where packageName = fromString . show . disp . pkgName . package . packageDescription $ gpd
+    where _packageName :: IsString a => a
+          _packageName = fromString . show . disp . pkgName . package . packageDescription $ gpd
           component unQualName comp
             = quoted name $=
                       mkNonRecSet ([ "depends"    $= toNix deps | Just deps <- [shakeTree . fmap (         targetBuildDepends . getBuildInfo) $ comp ] ] ++
@@ -219,10 +220,10 @@ instance ToNixExpr PkgconfigDependency where
   toNix (PkgconfigDependency name _versionRange)= (@.) (mkSym pkgconfPkgs) . quoted . fromString . unPkgconfigName $ name
 
 instance ToNixExpr ExeDependency where
-  toNix (ExeDependency pkgName _unqualCompName _versionRange) = mkSym . fromString . show . pretty $ pkgName
+  toNix (ExeDependency pkgName' _unqualCompName _versionRange) = mkSym . fromString . show . pretty $ pkgName'
 
 instance ToNixExpr BuildToolDependency where
-  toNix (BuildToolDependency pkgName) = mkSym hsPkgs @. "buildPackages" @. (fromString . show . pretty $ pkgName)
+  toNix (BuildToolDependency pkgName') = mkSym hsPkgs @. "buildPackages" @. (fromString . show . pretty $ pkgName')
 
 instance ToNixExpr LegacyExeDependency where
   toNix (LegacyExeDependency name _versionRange) = mkSym hsPkgs @. fromString name
@@ -243,16 +244,18 @@ instance ToNixExpr CompilerFlavor where
   toNix flavour = mkSym "compiler" @. (fromString . ("is" ++) . capitalize . show . pretty $ flavour)
 
 instance ToNixExpr VersionRange where
-  toNix AnyVersion              = mkBool True
-  toNix (ThisVersion       ver) = mkSym "compiler" @. "version" @. "eq" @@ mkStr (fromString (show (disp ver)))
-  toNix (LaterVersion      ver) = mkSym "compiler" @. "version" @. "gt" @@ mkStr (fromString (show (disp ver)))
-  toNix (OrLaterVersion    ver) = mkSym "compiler" @. "version" @. "ge" @@ mkStr (fromString (show (disp ver)))
-  toNix (EarlierVersion    ver) = mkSym "compiler" @. "version" @. "lt" @@ mkStr (fromString (show (disp ver)))
-  toNix (OrEarlierVersion  ver) = mkSym "compiler" @. "version" @. "le" @@ mkStr (fromString (show (disp ver)))
-  toNix (WildcardVersion   ver) = mkBool False
---  toNix (MajorBoundVersion ver) = mkSym "compiler" @. "version" @. "eq" @@ mkStr (fromString (show (disp ver)))
-  toNix (IntersectVersionRanges v1 v2) = toNix v1 $&& toNix v2
-  toNix x = error $ "ToNixExpr VersionRange for `" ++ (show x) ++ "` not implemented!"
+  toNix = toNix' . projectVersionRange
+    where
+      toNix' AnyVersionF              = mkBool True
+      toNix' (ThisVersionF       ver) = mkSym "compiler" @. "version" @. "eq" @@ mkStr (fromString (show (disp ver)))
+      toNix' (LaterVersionF      ver) = mkSym "compiler" @. "version" @. "gt" @@ mkStr (fromString (show (disp ver)))
+      toNix' (OrLaterVersionF    ver) = mkSym "compiler" @. "version" @. "ge" @@ mkStr (fromString (show (disp ver)))
+      toNix' (EarlierVersionF    ver) = mkSym "compiler" @. "version" @. "lt" @@ mkStr (fromString (show (disp ver)))
+      toNix' (OrEarlierVersionF  ver) = mkSym "compiler" @. "version" @. "le" @@ mkStr (fromString (show (disp ver)))
+      toNix' (WildcardVersionF  _ver) = mkBool False
+    --  toNix' (MajorBoundVersionF ver) = mkSym "compiler" @. "version" @. "eq" @@ mkStr (fromString (show (disp ver)))
+      toNix' (IntersectVersionRangesF v1 v2) = toNix v1 $&& toNix v2
+      toNix' x = error $ "ToNixExpr VersionRange for `" ++ (show x) ++ "` not implemented!"
 
 instance ToNixExpr a => ToNixExpr (Condition a) where
   toNix (Var a) = toNix a
