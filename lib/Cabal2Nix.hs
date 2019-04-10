@@ -189,9 +189,10 @@ mkSysDep :: String -> SysDependency
 mkSysDep = SysDependency
 
 instance ToNixExpr GenericPackageDescription where
-  toNix gpd = mkNonRecSet [ "flags"      $= (mkNonRecSet . fmap toNixBinding $ genPackageFlags gpd)
-                          , "package"    $= toNix (packageDescription gpd)
-                          , "components" $= components ]
+  toNix gpd = mkNonRecSet $ [ "flags"         $= (mkNonRecSet . fmap toNixBinding $ genPackageFlags gpd)
+                            , "package"       $= toNix (packageDescription gpd)] ++
+                            [ "setup-depends" $= toNix deps | Just deps <- [fmap setupDepends . setupBuildInfo $ packageDescription gpd ]] ++
+                            [ "components"    $= components ]
     where _packageName :: IsString a => a
           _packageName = fromString . show . disp . pkgName . package . packageDescription $ gpd
           component unQualName comp
