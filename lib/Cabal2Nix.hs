@@ -11,6 +11,7 @@ import Distribution.Pretty (pretty)
 import Data.Char (toUpper)
 import System.FilePath
 import Data.ByteString (ByteString)
+import Data.Maybe (catMaybes)
 
 import Distribution.Types.CondTree
 import Distribution.Types.Library
@@ -76,11 +77,11 @@ genExtra Hpack = mkNonRecSet [ "cabal-generator" $= mkStr "hpack" ]
 
 cabal2nix :: Maybe Src -> CabalFile -> IO NExpr
 cabal2nix src = \case
-  (OnDisk path) -> fmap (gpd2nix src Nothing)
-    $ readGenericPackageDescription normal path
-  (InMemory gen _ body) -> fmap (gpd2nix src (genExtra <$> gen))
-    $ case (runParseResult (parseGenericPackageDescription body)) of
-        (_, Left (_, err)) -> (error ("Failed to parse in-memory cabal file: " ++ show err))
+  (OnDisk path) -> gpd2nix src Nothing
+    <$> readGenericPackageDescription normal path
+  (InMemory gen _ body) -> gpd2nix src (genExtra <$> gen)
+    <$> case runParseResult (parseGenericPackageDescription body) of
+        (_, Left (_, err)) -> error ("Failed to parse in-memory cabal file: " ++ show err)
         (_, Right desc) -> pure desc
 
 gpd2nix :: Maybe Src -> Maybe NExpr -> GenericPackageDescription -> NExpr
@@ -118,7 +119,7 @@ shakeTree :: (Foldable t, Foldable f) => CondTree v (t c) (f a) -> Maybe (CondTr
 shakeTree (CondNode d c bs) = case (null d, null bs') of
                                 (True, True) -> Nothing
                                 _            -> Just (CondNode d c bs')
-  where bs' = [b | Just b <- shakeBranch <$> bs ]
+  where bs' = catMaybes (shakeBranch <$> bs)
 
 shakeBranch :: (Foldable t, Foldable f) => CondBranch v (t c) (f a) -> Maybe (CondBranch v (t c) (f a))
 shakeBranch (CondBranch c t f) = case (shakeTree t, f >>= shakeTree) of
@@ -129,7 +130,7 @@ shakeBranch (CondBranch c t f) = case (shakeTree t, f >>= shakeTree) of
 --- String helper
 transformFst :: (Char -> Char) -> String -> String
 transformFst _ [] = []
-transformFst f (x:xs) = (f x):xs
+transformFst f (x:xs) = f x : xs
 capitalize :: String -> String
 capitalize = transformFst toUpper
 
@@ -188,9 +189,9 @@ mkSysDep :: String -> SysDependency
 mkSysDep = SysDependency
 
 instance ToNixExpr GenericPackageDescription where
-  toNix gpd = mkNonRecSet $ [ "flags"      $= (mkNonRecSet . fmap toNixBinding $ genPackageFlags gpd)
-                            , "package"    $= (toNix (packageDescription gpd))
-                            , "components" $= components ]
+  toNix gpd = mkNonRecSet [ "flags"      $= (mkNonRecSet . fmap toNixBinding $ genPackageFlags gpd)
+                          , "package"    $= toNix (packageDescription gpd)
+                          , "components" $= components ]
     where _packageName :: IsString a => a
           _packageName = fromString . show . disp . pkgName . package . packageDescription $ gpd
           component unQualName comp
@@ -255,7 +256,7 @@ instance ToNixExpr VersionRange where
       toNix' (WildcardVersionF  _ver) = mkBool False
     --  toNix' (MajorBoundVersionF ver) = mkSym "compiler" @. "version" @. "eq" @@ mkStr (fromString (show (disp ver)))
       toNix' (IntersectVersionRangesF v1 v2) = toNix v1 $&& toNix v2
-      toNix' x = error $ "ToNixExpr VersionRange for `" ++ (show x) ++ "` not implemented!"
+      toNix' x = error $ "ToNixExpr VersionRange for `" ++ show x ++ "` not implemented!"
 
 instance ToNixExpr a => ToNixExpr (Condition a) where
   toNix (Var a) = toNix a
