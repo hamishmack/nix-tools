@@ -166,21 +166,23 @@ instance ToNixExpr PackageIdentifier where
                             , "version" $= mkStr (fromString (show (disp (pkgVersion ident))))]
 
 instance ToNixExpr PackageDescription where
-  toNix pd = mkNonRecSet [ "specVersion" $= mkStr (fromString (show (disp (specVersion pd))))
-                         , "identifier"  $= toNix (package pd)
-                         , "license"     $= mkStr (fromString (show (pretty (license pd))))
+  toNix pd = mkNonRecSet $ [ "specVersion" $= mkStr (fromString (show (disp (specVersion pd))))
+                           , "identifier"  $= toNix (package pd)
+                           , "license"     $= mkStr (fromString (show (pretty (license pd))))
 
-                         , "copyright"   $= mkStr (fromString (copyright pd))
-                         , "maintainer"  $= mkStr (fromString (maintainer pd))
-                         , "author"      $= mkStr (fromString (author pd))
+                           , "copyright"   $= mkStr (fromString (copyright pd))
+                           , "maintainer"  $= mkStr (fromString (maintainer pd))
+                           , "author"      $= mkStr (fromString (author pd))
 
-                         , "homepage"    $= mkStr (fromString (homepage pd))
-                         , "url"         $= mkStr (fromString (pkgUrl pd))
+                           , "homepage"    $= mkStr (fromString (homepage pd))
+                           , "url"         $= mkStr (fromString (pkgUrl pd))
 
-                         , "synopsis"    $= mkStr (fromString (synopsis pd))
-                         , "description" $= mkStr (fromString (description pd))
+                           , "synopsis"    $= mkStr (fromString (synopsis pd))
+                           , "description" $= mkStr (fromString (description pd))
 
-                         , "buildType"   $= mkStr (fromString (show (pretty (buildType pd)))) ]
+                           , "buildType"   $= mkStr (fromString (show (pretty (buildType pd))))
+                           ] ++
+                           [ "setup-depends" $= toNix (BuildToolDependency . depPkgName <$> deps) | Just deps <- [setupDepends <$> setupBuildInfo pd ]]
 
 newtype SysDependency = SysDependency { unSysDependency :: String } deriving (Show, Eq, Ord)
 newtype BuildToolDependency = BuildToolDependency { unBuildToolDependency :: PackageName } deriving (Show, Eq, Ord)
@@ -190,9 +192,8 @@ mkSysDep = SysDependency
 
 instance ToNixExpr GenericPackageDescription where
   toNix gpd = mkNonRecSet $ [ "flags"         $= (mkNonRecSet . fmap toNixBinding $ genPackageFlags gpd)
-                            , "package"       $= toNix (packageDescription gpd)] ++
-                            [ "setup-depends" $= toNix deps | Just deps <- [fmap setupDepends . setupBuildInfo $ packageDescription gpd ]] ++
-                            [ "components"    $= components ]
+                            , "package"       $= toNix (packageDescription gpd)
+                            , "components"    $= components ]
     where _packageName :: IsString a => a
           _packageName = fromString . show . disp . pkgName . package . packageDescription $ gpd
           component unQualName comp
