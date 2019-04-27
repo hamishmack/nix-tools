@@ -34,6 +34,7 @@ import Data.String (fromString, IsString)
 import Distribution.Types.PackageId
 --import Distribution.Types.Condition
 import Distribution.Types.UnqualComponentName
+import Data.List.NonEmpty (NonEmpty(..))
 import Nix.Expr
 import Data.Fix(Fix(..))
 import Data.Text (Text)
@@ -226,7 +227,11 @@ instance ToNixExpr ExeDependency where
   toNix (ExeDependency pkgName' _unqualCompName _versionRange) = mkSym . fromString . show . pretty $ pkgName'
 
 instance ToNixExpr BuildToolDependency where
-  toNix (BuildToolDependency pkgName') = mkSym hsPkgs @. "buildPackages" @. (fromString . show . pretty $ pkgName')
+  toNix (BuildToolDependency pkgName') =
+      Fix $ NSelect (mkSym hsPkgs) buildPackagesDotName
+        (Just . Fix $ NSelect (mkSym pkgs) buildPackagesDotName Nothing)
+    where
+      buildPackagesDotName = StaticKey "buildPackages" :| [StaticKey (fromString . show . pretty $ pkgName')]
 
 instance ToNixExpr LegacyExeDependency where
   toNix (LegacyExeDependency name _versionRange) = mkSym hsPkgs @. fromString name
